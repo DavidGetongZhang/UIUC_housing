@@ -1,31 +1,216 @@
 <!DOCTYPE html>
-<!-- A placeholder from the Home Sales template. Replace this file with your site's first page. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Under construction</title>
-  <!-- An empty icon, so the browser doesn't log an error looking for favicon.ico -->
+  <title>Median home sale prices by city</title>
   <link rel="icon" href="data:,">
   <style>
-    :root { color-scheme: light dark; }
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #1f2937;
+      background: #f5f7fb;
+    }
     body {
-      max-width: 40rem;
-      margin: 0 auto;
-      padding: 3rem 1rem;
-      font-family: system-ui, sans-serif;
+      margin: 0;
       line-height: 1.5;
     }
-    footer { margin-top: 3rem; font-size: 0.875rem; opacity: 0.75; }
+    main {
+      max-width: 62rem;
+      margin: 0 auto;
+      padding: 3rem 1rem;
+    }
+    h1 {
+      max-width: 42rem;
+      margin: 0;
+      color: #12355b;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      line-height: 1.1;
+    }
+    .intro {
+      max-width: 42rem;
+      margin: 1rem 0 2rem;
+      font-size: 1.1rem;
+    }
+    .note {
+      padding: 1rem 1.25rem;
+      border-left: 0.3rem solid #2f6690;
+      background: #e7f0f7;
+    }
+    .table-wrap {
+      margin-top: 2rem;
+      overflow-x: auto;
+      background: white;
+      border: 1px solid #d8e0e8;
+      border-radius: 0.5rem;
+      box-shadow: 0 0.25rem 1rem rgb(18 53 91 / 8%);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    caption {
+      padding: 1rem;
+      color: #52606d;
+      text-align: left;
+      caption-side: bottom;
+    }
+    th, td {
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid #e8edf2;
+    }
+    th {
+      color: #12355b;
+      background: #f0f4f8;
+      font-size: 0.9rem;
+      letter-spacing: 0.02em;
+    }
+    tbody tr:last-child td { border-bottom: 0; }
+    td:last-child, th:last-child { text-align: right; }
+    .status {
+      color: #52606d;
+      font-style: italic;
+    }
+    .error {
+      color: #9b1c1c;
+      font-style: normal;
+    }
+    footer {
+      max-width: 62rem;
+      margin: 0 auto;
+      padding: 0 1rem 2rem;
+      color: #52606d;
+      font-size: 0.875rem;
+    }
   </style>
 </head>
 <body>
   <main>
-    <h1>This site is under construction</h1>
-    <p>It will show findings from the College-town home sales dataset.</p>
+    <h1>Median home sale price by city</h1>
+    <p class="intro">How much did homes typically sell for in each college town?</p>
+    <p class="note"><strong>Price rule:</strong> Sales under $10,000 are left out because the data description identifies them as impossible values. Every median below is calculated from the remaining sales in the CSV.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption id="table-caption">Loading sales data…</caption>
+        <thead>
+          <tr>
+            <th scope="col">City</th>
+            <th scope="col">State</th>
+            <th scope="col">Sales included</th>
+            <th scope="col">Median sale price</th>
+          </tr>
+        </thead>
+        <tbody id="results">
+          <tr><td class="status" colspan="4">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </main>
+
   <footer>
-    <p>Data: College-town home sales dataset, version 1.0 (2026). University of Illinois-Deloitte Foundation Center for Business Emerging Technologies. Data collected March 2026.</p>
+    Data: College-town home sales dataset, version 1.0 (2026). Data collected March 2026.
   </footer>
+
+  <script>
+    const results = document.querySelector("#results");
+    const caption = document.querySelector("#table-caption");
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let field = "";
+      let quoted = false;
+
+      for (let i = 0; i < text.length; i += 1) {
+        const character = text[i];
+        const next = text[i + 1];
+        if (character === '"' && quoted && next === '"') {
+          field += '"';
+          i += 1;
+        } else if (character === '"') {
+          quoted = !quoted;
+        } else if (character === "," && !quoted) {
+          row.push(field);
+          field = "";
+        } else if ((character === "\n" || character === "\r") && !quoted) {
+          if (character === "\r" && next === "\n") i += 1;
+          row.push(field);
+          if (row.some((value) => value !== "")) rows.push(row);
+          row = [];
+          field = "";
+        } else {
+          field += character;
+        }
+      }
+
+      if (field || row.length) {
+        row.push(field);
+        if (row.some((value) => value !== "")) rows.push(row);
+      }
+      return rows;
+    }
+
+    function median(values) {
+      const middle = Math.floor(values.length / 2);
+      return values.length % 2 === 0
+        ? (values[middle - 1] + values[middle]) / 2
+        : values[middle];
+    }
+
+    function formatCurrency(value) {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0
+      }).format(value);
+    }
+
+    async function renderResults() {
+      const response = await fetch("data/college_town_home_sales.csv");
+      if (!response.ok) throw new Error(`Could not load the sales data (${response.status}).`);
+
+      const rows = parseCsv(await response.text());
+      const headers = rows.shift();
+      const cityIndex = headers.indexOf("city");
+      const stateIndex = headers.indexOf("state");
+      const priceIndex = headers.indexOf("sale_price");
+      const byCity = new Map();
+
+      rows.forEach((row) => {
+        const price = Number(row[priceIndex]);
+        if (!row[cityIndex] || !row[stateIndex] || !Number.isFinite(price) || price < 10000) return;
+        const key = `${row[cityIndex]}|${row[stateIndex]}`;
+        if (!byCity.has(key)) byCity.set(key, { city: row[cityIndex], state: row[stateIndex], prices: [] });
+        byCity.get(key).prices.push(price);
+      });
+
+      const cities = [...byCity.values()]
+        .map((group) => ({
+          ...group,
+          prices: group.prices.sort((a, b) => a - b)
+        }))
+        .sort((a, b) => a.city.localeCompare(b.city));
+
+      results.replaceChildren(...cities.map((group) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${group.city}</td>
+          <td>${group.state}</td>
+          <td>${group.prices.length.toLocaleString("en-US")}</td>
+          <td>${formatCurrency(median(group.prices))}</td>
+        `;
+        return row;
+      }));
+      caption.textContent = `${cities.length} cities, calculated from the CSV in your browser.`;
+    }
+
+    renderResults().catch((error) => {
+      results.innerHTML = `<tr><td class="status error" colspan="4">${error.message}</td></tr>`;
+      caption.textContent = "The results could not be loaded.";
+    });
+  </script>
 </body>
 </html>
